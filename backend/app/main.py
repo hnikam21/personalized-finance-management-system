@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from app.routers import auth, income, expense, goal, category, insights, investment, debt, health, alert
+from app.routers import auth, income, expense, goal, category, insights, investment, debt, health, alert, assistant
 from app.core.scheduler import start_scheduler
 
 
@@ -16,14 +16,15 @@ app.include_router(investment.router)
 app.include_router(debt.router)
 app.include_router(health.router)
 app.include_router(alert.router)
+app.include_router(assistant.router)
 
 @app.get("/")
 def root():
     return {"message": "Finance Management API running"}
 
-@app.on_event("startup")
-def startup_event():
-    start_scheduler()
+# @app.on_event("startup")
+# def startup_event():
+#     start_scheduler()
 
 
 
