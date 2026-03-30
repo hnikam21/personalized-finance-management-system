@@ -1,6 +1,4 @@
-from ast import List
 from typing import List
-
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from decimal import Decimal
@@ -11,14 +9,11 @@ from app.schemas.expense import ExpenseCreate, ExpenseResponse
 from app.utils.dependencies import get_db
 from app.utils.auth_dependencies import get_current_user
 from app.models.user import User
-from app.ml.self_learning_classifier import classify_expense
-
 
 router = APIRouter(
     prefix="/expense",
     tags=["Expense"]
 )
-
 
 # ---------------- ADD EXPENSE ----------------
 
@@ -33,60 +28,27 @@ def add_expense(
     current_user: User = Depends(get_current_user)
 ):
 
-    auto_categorized = False
-    category_id = expense.category_id
+    # ❌ Removed ML logic completely
+    # ✅ Only manual category allowed
 
-    # ---------------------------------------------
-    # 🤖 If no category → Use Self Learning Model
-    # ---------------------------------------------
-    if not category_id:
+    category = db.query(Category).filter(
+        Category.id == expense.category_id,
+        Category.user_id == current_user.id
+    ).first()
 
-        if not expense.description:
-            raise HTTPException(
-                status_code=400,
-                detail="Description required"
-            )
-
-        predicted_category, model_source = classify_expense(
-            db,
-            current_user.id,
-            expense.description
+    if not category:
+        raise HTTPException(
+            status_code=404,
+            detail="Category not found"
         )
-
-        category = db.query(Category).filter(
-            Category.name == predicted_category,
-            Category.user_id == current_user.id
-        ).first()
-
-        if not category:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Predicted category '{predicted_category}' not found"
-            )
-
-        category_id = category.id
-        auto_categorized = True
-
-    # Manual category validation
-    else:
-        category = db.query(Category).filter(
-            Category.id == category_id,
-            Category.user_id == current_user.id
-        ).first()
-
-        if not category:
-            raise HTTPException(
-                status_code=404,
-                detail="Category not found"
-            )
 
     new_expense = Expense(
         user_id=current_user.id,
-        category_id=category_id,
+        category_id=expense.category_id,
         amount=expense.amount,
         date=expense.date,
         description=expense.description,
-        auto_categorized=auto_categorized
+        auto_categorized=False   # always false now
     )
 
     db.add(new_expense)
@@ -110,20 +72,24 @@ def expense_summary(
     total_expense = sum((e.amount for e in expenses), Decimal("0"))
 
     category_breakdown = {}
+
     for e in expenses:
         category = db.query(Category).filter(Category.id == e.category_id).first()
         if category:
             category_name = category.name
-            category_breakdown[category_name] = category_breakdown.get(category_name, Decimal("0")) + e.amount
+            category_breakdown[category_name] = (
+                category_breakdown.get(category_name, Decimal("0")) + e.amount
+            )
 
     return {
-    "total_expense": float(total_expense),
-    "category_breakdown": {
-        k: float(v) for k, v in category_breakdown.items()
+        "total_expense": float(total_expense),
+        "category_breakdown": {
+            k: float(v) for k, v in category_breakdown.items()
+        }
     }
-}
 
-# // ---------------- RECENT EXPENSES ----------------
+
+# ---------------- RECENT EXPENSES ----------------
 
 @router.get("/")
 def get_expenses(
@@ -144,7 +110,7 @@ def get_expenses(
     for expense, category_name in expenses:
         result.append({
             "id": expense.id,
-            "amount": expense.amount,
+            "amount": float(expense.amount),
             "date": expense.date,
             "description": expense.description,
             "category": category_name,
